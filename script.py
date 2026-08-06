@@ -23,7 +23,7 @@ def ask_ai(user_question: str):
 
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",  # النموذج الجديد المعتمد في المكتبة
             contents=user_question,
         )
         return {"question": user_question, "ai_answer": response.text}
