@@ -5,7 +5,6 @@ from google import genai
 app = FastAPI()
 
 api_key = os.getenv("GEMINI_API_KEY")
-
 client = genai.Client(api_key=api_key)
 
 
@@ -24,7 +23,7 @@ def ask_ai(user_question: str):
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             contents=user_question,
         )
         return {"question": user_question, "ai_answer": response.text}
