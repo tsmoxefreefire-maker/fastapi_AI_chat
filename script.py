@@ -4,7 +4,7 @@ from openai import OpenAI
 
 app = fastapi.FastAPI()
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "sk-YOUR_ACTUAL_KEY"))
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 @app.get("/User_name&Age")
 def get_user_name_and_age(name: str, age: int):
