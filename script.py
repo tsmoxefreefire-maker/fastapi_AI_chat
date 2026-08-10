@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from openai import OpenAI
+from google import genai
 
 app = FastAPI()
 
@@ -12,38 +12,26 @@ async def summarize_story(file: UploadFile = File(...)):
             status_code=400, detail="Please upload a .txt file only."
         )
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(
-            status_code=500, detail="OPENAI_API_KEY is not set in Render Environment"
+            status_code=500, detail="GEMINI_API_KEY is not set in Render Environment"
         )
 
     try:
         file_bytes = await file.read()
         story_text = file_bytes.decode("utf-8")
 
-        client = OpenAI(api_key=api_key)
+        client = genai.Client(api_key=api_key)
 
-        messages_list = [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that summarizes stories simply.",
-            },
-            {
-                "role": "user",
-                "content": f"Summarize this story:\n\n{story_text}",
-            },
-        ]
+        prompt = f"Summarize this story simply and highlight the main events:\n\n{story_text}"
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages_list,  # type: ignore
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
         )
 
-        ai_summary = response.choices[0].message.content  # type: ignore
-
-        return {"file_name": file.filename, "summary": ai_summary}
+        return {"file_name": file.filename, "summary": response.text}
 
     except Exception as e:
-        # إرجاع تفاصيل الخطأ بدقة للتصحيح
         raise HTTPException(status_code=500, detail=str(e))
