@@ -1,32 +1,38 @@
 import os
-from fastapi import FastAPI, HTTPException
-from google import genai
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from openai import OpenAI
 
 app = FastAPI()
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-@app.get("/ask_ai")
-def ask_ai(user_question: str):
-    # 1. جلب المفتاح من متغيرات البيئة
-    api_key = os.getenv("GEMINI_API_KEY")
 
-    # 2. التحقق من وجود المفتاح
-    if not api_key:
+@app.post("/summarize")
+async def summarize_story(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.endswith(".txt"):
         raise HTTPException(
-            status_code=500,
-            detail="GEMINI_API_KEY is not set in Render environment variables.",
+            status_code=400, detail="Please upload a .txt file only."
         )
 
-    try:
-        # 3. إنشاء العميل بيمرّر المفتاح مباشرة
-        client = genai.Client(api_key=api_key)
+    file_bytes = await file.read()
+    story_text = file_bytes.decode("utf-8")
 
-        # 4. إرسال الطلب
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=user_question,
-        )
-        return {"question": user_question, "ai_answer": response.text}
+    messages_list = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant that summarizes stories simply.",
+        },
+        {
+            "role": "user",
+            "content": f"Summarize this story:\n\n{story_text}",
+        },
+    ]
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=messages_list,  # type: ignore
+    )
+
+    ai_summary = response.choices[0].message.content  # type: ignore
+
+    return {"file_name": file.filename, "summary": ai_summary}
