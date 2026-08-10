@@ -1,8 +1,13 @@
 import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from google import genai
+import google.generativeai as genai
 
 app = FastAPI()
+
+# ضبط المفتاح
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key:
+    genai.configure(api_key=api_key)
 
 
 @app.post("/summarize")
@@ -12,7 +17,6 @@ async def summarize_story(file: UploadFile = File(...)):
             status_code=400, detail="Please upload a .txt file only."
         )
 
-    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(
             status_code=500, detail="GEMINI_API_KEY is not set in Render Environment"
@@ -22,14 +26,11 @@ async def summarize_story(file: UploadFile = File(...)):
         file_bytes = await file.read()
         story_text = file_bytes.decode("utf-8")
 
-        client = genai.Client(api_key=api_key)
-
         prompt = f"Summarize this story simply and highlight the main events:\n\n{story_text}"
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-        )
+        # استخدام الموديل المستقر
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(prompt)
 
         return {"file_name": file.filename, "summary": response.text}
 
