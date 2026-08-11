@@ -54,13 +54,25 @@ async def generate_questions_file(
         """
 
         interaction = client.interactions.create(
-            model="gemini-3.5-flash",
+            model="gemini-2.0-flash",
             input=prompt,
             response_format={"type": "object"},
         )
 
-        # تعديل الاستخراج هنا فقط (output بدلاً من outputs)
-        json_data = interaction.output.text
+        # استخراج النص بطريقة آمنة تضمن الحصول على JSON غير فارغ
+        json_data = ""
+        if hasattr(interaction, "outputs") and interaction.outputs:
+            json_data = interaction.outputs[0].text
+        elif hasattr(interaction, "result") and interaction.result:
+            json_data = str(interaction.result)
+        else:
+            json_data = str(interaction)
+
+        if not json_data or json_data.strip() == "":
+            raise HTTPException(
+                status_code=500, detail="Generated JSON response was empty."
+            )
+
         file_stream = io.BytesIO(json_data.encode("utf-8"))  # type: ignore
 
         new_filename = f"questions_{file.filename.replace('.txt', '.json')}"
