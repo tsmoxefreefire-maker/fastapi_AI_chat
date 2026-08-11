@@ -3,4 +3,4 @@ uvicorn
 openai
 python-multipart
 pydantic
-google-genai
+google-generativeai
