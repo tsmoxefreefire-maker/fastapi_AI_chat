@@ -32,7 +32,6 @@ async def generate_questions_file(
         file_bytes = await file.read()
         story_text = file_bytes.decode("utf-8")
 
-        # تهيئة المكتبة بمفتاح الـ API
         genai.configure(api_key=api_key)
 
         prompt = f"""
@@ -54,7 +53,6 @@ async def generate_questions_file(
         {story_text}
         """
 
-        # استخدام الموديل القياسي المضمون
         model = genai.GenerativeModel("gemini-1.5-flash")
 
         response = model.generate_content(
