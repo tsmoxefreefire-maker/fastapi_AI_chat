@@ -53,14 +53,14 @@ async def generate_questions_file(
         {story_text}
         """
 
-        # استخدام اسم النموذج المحدث مع Interactions API
         interaction = client.interactions.create(
             model="gemini-3.5-flash",
             input=prompt,
             response_format={"type": "object"},
         )
 
-        json_data = interaction.outputs[-1].text
+        # تعديل الاستخراج هنا فقط (output بدلاً من outputs)
+        json_data = interaction.output.text
         file_stream = io.BytesIO(json_data.encode("utf-8"))  # type: ignore
 
         new_filename = f"questions_{file.filename.replace('.txt', '.json')}"
