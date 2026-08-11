@@ -2,7 +2,8 @@ import io
 import os
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 app = FastAPI()
 
@@ -32,7 +33,8 @@ async def generate_questions_file(
         file_bytes = await file.read()
         story_text = file_bytes.decode("utf-8")
 
-        genai.configure(api_key=api_key)
+        # إنشاء العميل باستخدام SDK الجديد
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""
         Read the following story and generate exactly {num_questions} comprehension questions based on it.
@@ -53,11 +55,13 @@ async def generate_questions_file(
         {story_text}
         """
 
-        model = genai.GenerativeModel("gemini-1.5-flash")
-
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"},
+        # الموديل الحديث الرسمي والشغال مباشرة
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            ),
         )
 
         json_data = response.text
