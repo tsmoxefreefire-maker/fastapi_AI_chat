@@ -3,7 +3,6 @@ import os
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from google import genai
-from google.genai import types
 
 app = FastAPI()
 
@@ -33,7 +32,6 @@ async def generate_questions_file(
         file_bytes = await file.read()
         story_text = file_bytes.decode("utf-8")
 
-        # إنشاء العميل باستخدام SDK الجديد
         client = genai.Client(api_key=api_key)
 
         prompt = f"""
@@ -55,16 +53,14 @@ async def generate_questions_file(
         {story_text}
         """
 
-        # الموديل الحديث الرسمي والشغال مباشرة
-        response = client.models.generate_content(
+        # استخدام Interactions API المعتمد حديثاً
+        interaction = client.interactions.create(
             model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            ),
+            input=prompt,
+            response_format={"type": "json_object"},
         )
 
-        json_data = response.text
+        json_data = interaction.outputs[-1].text
         file_stream = io.BytesIO(json_data.encode("utf-8"))  # type: ignore
 
         new_filename = f"questions_{file.filename.replace('.txt', '.json')}"
