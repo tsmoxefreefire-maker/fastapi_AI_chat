@@ -59,18 +59,21 @@ async def generate_questions_file(
             response_format={"type": "object"},
         )
 
-        # استخراج النص بطريقة آمنة تضمن الحصول على JSON غير فارغ
+        # استخراج النص الصريح المولد من خطوات الـ Interaction
         json_data = ""
-        if hasattr(interaction, "outputs") and interaction.outputs:
-            json_data = interaction.outputs[0].text
-        elif hasattr(interaction, "result") and interaction.result:
-            json_data = str(interaction.result)
-        else:
-            json_data = str(interaction)
+        if hasattr(interaction, "steps") and interaction.steps:
+            for step in reversed(interaction.steps):
+                if hasattr(step, "content") and step.content:
+                    json_data = step.content[0].text
+                    break
+
+        # احتياطي في حال عدم إيجاده في steps
+        if not json_data and hasattr(interaction, "output_text"):
+            json_data = interaction.output_text
 
         if not json_data or json_data.strip() == "":
             raise HTTPException(
-                status_code=500, detail="Generated JSON response was empty."
+                status_code=500, detail="Failed to extract JSON content from model output."
             )
 
         file_stream = io.BytesIO(json_data.encode("utf-8"))  # type: ignore
