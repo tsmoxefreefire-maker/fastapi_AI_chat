@@ -2,8 +2,7 @@ import io
 import os
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
 app = FastAPI()
 
@@ -33,20 +32,8 @@ async def generate_questions_file(
         file_bytes = await file.read()
         story_text = file_bytes.decode("utf-8")
 
-        client = genai.Client(api_key=api_key)
-
-        # 1. البحث التلقائي عن أوّل موديل يدعم generateContent لمفتاحك
-        available_models = list(client.models.list())
-        selected_model = None
-
-        for m in available_models:
-            if "generateContent" in getattr(m, "supported_generation_methods", []):
-                selected_model = m.name
-                break
-
-        # في حال عدم التمكن من جلب القائمة، نستخدم الاسم المعياري ببادئة models/
-        if not selected_model:
-            selected_model = "models/gemini-1.5-flash"
+        # تهيئة المكتبة بمفتاح الـ API
+        genai.configure(api_key=api_key)
 
         prompt = f"""
         Read the following story and generate exactly {num_questions} comprehension questions based on it.
@@ -67,12 +54,12 @@ async def generate_questions_file(
         {story_text}
         """
 
-        response = client.models.generate_content(
-            model=selected_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            ),
+        # استخدام الموديل القياسي المضمون
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"},
         )
 
         json_data = response.text
@@ -86,7 +73,5 @@ async def generate_questions_file(
             headers={"Content-Disposition": f"attachment; filename={new_filename}"},
         )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
