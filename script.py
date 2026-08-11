@@ -54,7 +54,7 @@ async def generate_questions_file(
         """
 
         interaction = client.interactions.create(
-            model="gemini-2.0-flash",
+            model="gemini-3.5-flash",
             input=prompt,
             response_format={"type": "object"},
         )
