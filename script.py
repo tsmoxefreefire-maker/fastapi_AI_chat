@@ -53,11 +53,11 @@ async def generate_questions_file(
         {story_text}
         """
 
-        # استخدام Interactions API المعتمد حديثاً
+        # تعديل القيمة إلى object المعتمدة
         interaction = client.interactions.create(
             model="gemini-2.0-flash",
             input=prompt,
-            response_format={"type": "json_object"},
+            response_format={"type": "object"},
         )
 
         json_data = interaction.outputs[-1].text
