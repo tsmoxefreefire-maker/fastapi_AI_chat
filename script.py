@@ -16,9 +16,9 @@ def home():
 @app.post("/generate_questions")
 async def generate_questions_file(
     num_questions: int = Form(5, description="Total number of questions"),
-    mcq_percent: int = Form(0, description="Multiple choice percentage (0-100)"),
-    tf_percent: int = Form(100, description="True/False percentage (0-100)"),
-    essay_percent: int = Form(0, description="Short answer percentage (0-100)"),
+    mcq_percent: int = Form(10, description="Multiple choice percentage {0-100}"),
+    tf_percent: int = Form(10, description="True/False percentage {0-100}"),
+    essay_percent: int = Form(30, description="Short answer percentage {0-100}"),
     file: UploadFile = File(...),
 ):
     # Validate number of questions
@@ -77,7 +77,7 @@ async def generate_questions_file(
         """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             contents=[uploaded_part, prompt],
         )
 
