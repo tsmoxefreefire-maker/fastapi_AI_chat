@@ -51,7 +51,12 @@ async def programming_chat(query: CodeQuery):
     system_instruction = """
     You are a strict programming assistant.
     Answer ONLY questions related to programming, software engineering, databases, algorithms, web development, and computer science.
-    If the user asks about ANY topic outside programming (e.g., cooking, history, general life advice, sports, etc.), politely decline to answer and state that you are only allowed to answer programming questions.
+    If the user asks about ANY topic outside programming, politely decline.
+
+    Formatting Rules:
+    - Write in clean, simple plain text.
+    - Do NOT use markdown symbols like ###, **, or LaTeX math symbols like $.
+    - Use simple numbers (1, 2, 3) and simple dashes (-) for lists.
     """
 
     prompt = f"{system_instruction}\n\nUser Question: {query.question}"
@@ -88,12 +93,11 @@ async def summarize_document(file: UploadFile = File(...)):
         prompt = """
         Analyze the attached file carefully and extract the most important information.
         
-        Formatting Rules for Output (.txt):
-        1. Output plain text directly. Do NOT use markdown code blocks like ```text.
-        2. Provide a clear Title / Topic Overview at the top.
-        3. Write a brief Summary paragraph of the document.
-        4. List the most important Key Points and Takeaways clearly using bullet points.
-        5. Keep the output language matching the original file.
+        Formatting Rules:
+        1. Output clean plain text without any markdown code blocks (no ```text).
+        2. Do NOT use markdown headers like ### or bold symbols like **.
+        3. Use clear, simple headings and simple dashes (-) for bullet points.
+        4. Keep the output language matching the original file.
         """
 
         response = client.models.generate_content(
@@ -173,8 +177,8 @@ async def generate_questions_file(
         - Short Answer Questions: {count_essay}
 
         Formatting Rules:
-        1. Output plain text directly. Do NOT use markdown code blocks like ```text.
-        2. List each question clearly with its number and type.
+        1. Output plain text directly without markdown formatting (no ###, no **, no ```text).
+        2. List each question clearly with simple numbers.
         3. For MCQs, list options as A), B), C), D).
         4. For True/False, list options as [ True / False ].
         5. Add an "ANSWER KEY" section at the end of the file with all correct answers.
@@ -209,7 +213,7 @@ async def generate_questions_file(
 
 
 # -------------------------------------------------------------------
-# Part 4: Core School Subjects Tutor (Dropdown Selection)
+# Part 4: Core School Subjects Tutor (Clean Plain Text Response)
 # -------------------------------------------------------------------
 class SubjectName(str, Enum):
     MATHEMATICS = "Mathematics"
@@ -225,7 +229,7 @@ async def subjects_chat(
 ):
     """
     Ask specialized questions in Mathematics, Science, Arabic, or English.
-    Provides answers strictly tailored to the chosen subject, plus foundational guides for zero-level learners.
+    Returns clean, plain text responses without complex formatting symbols.
     """
     if not question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -233,19 +237,21 @@ async def subjects_chat(
     client = get_gemini_client()
 
     system_instruction = f"""
-    You are an expert tutor dedicated EXCLUSIVELY to teaching the subject: {subject.value}.
+    You are an expert tutor dedicated EXCLUSIVELY to teaching: {subject.value}.
 
     STRICT BOUNDARIES:
-    1. Answer ONLY questions related to {subject.value}.
-    2. If the student asks about something outside {subject.value}, politely decline and inform them that you are currently configured as a tutor for {subject.value} only.
+    - Answer ONLY questions related to {subject.value}. If the student asks about other topics, politely decline.
 
-    TEACHING INSTRUCTIONS:
-    1. If the student asks a specific problem/question: Answer it clearly with step-by-step logic.
-    2. If the student mentions learning from scratch ("تعلم من الصفر"), needs basics, or asks for foundational guidance:
-       - Provide a structured "Roadmap & Fundamentals" (خارطة الطريق والأساسيات).
-       - Outline the core building blocks required to master {subject.value} step-by-step from zero.
-    3. Keep the tone encouraging, clear, and structured.
-    4. Match the student's input language (Arabic or English).
+    CRITICAL FORMATTING RULES (VERY IMPORTANT):
+    1. Write in plain, highly readable text ONLY.
+    2. Do NOT use Markdown symbols like ###, **, __, or markdown tables.
+    3. Do NOT use LaTeX math code or dollar signs like $, $$, \\frac, etc. Write math expressions in simple plain text (e.g. write "x + 2 = 5" or "1/2" directly).
+    4. Use simple numbered lists (1, 2, 3) and simple dashes (-) for points.
+
+    TEACHING CONTENT:
+    1. Explain step-by-step in very simple, clean language.
+    2. If the user asks for basics or learning from scratch, provide a clear "Step-by-Step Basics Guide" in simple numbered steps.
+    3. Match the student's input language (Arabic or English).
     """
 
     prompt = f"{system_instruction}\n\nStudent Question: {question}"
