@@ -47,9 +47,15 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
 
 
 # -------------------------------------------------------------------
-# Universal File Handler (Handles ALL File Types)
+# Universal File Handler (Handles ALL Encodings & File Types)
 # -------------------------------------------------------------------
 def process_uploaded_file(file_bytes: bytes, filename: str, content_type: str):
+    if not file_bytes or not file_bytes.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=f"The uploaded file '{filename}' is empty. Please provide a file with text content.",
+        )
+
     ext = os.path.splitext(filename)[1].lower()
     guessed_mime, _ = mimetypes.guess_type(filename)
     mime_type = (
@@ -62,9 +68,18 @@ def process_uploaded_file(file_bytes: bytes, filename: str, content_type: str):
     if ext == ".docx":
         extracted_text = extract_text_from_docx(file_bytes)
         if extracted_text.strip():
-            return f"Attached Word Document ({filename}):\n\n{extracted_text}"
+            return extracted_text
 
-    # 2. Known Text / Code Extensions
+    # 2. Text / Code Encodings List (Supports Arabic Windows Notepad Encodings)
+    arabic_and_text_encodings = [
+        "utf-8",
+        "utf-8-sig",
+        "cp1256",      # Windows Arabic (Notepad Default)
+        "iso-8859-6",  # ISO Arabic
+        "utf-16",
+        "latin-1",
+    ]
+
     text_extensions = {
         ".txt",
         ".md",
@@ -97,25 +112,15 @@ def process_uploaded_file(file_bytes: bytes, filename: str, content_type: str):
         or mime_type
         in ["application/json", "application/javascript", "application/xml"]
     ):
-        try:
-            decoded_text = file_bytes.decode("utf-8")
-            return f"Attached File Content ({filename}):\n\n{decoded_text}"
-        except UnicodeDecodeError:
+        for enc in arabic_and_text_encodings:
             try:
-                decoded_text = file_bytes.decode("latin-1")
-                return f"Attached File Content ({filename}):\n\n{decoded_text}"
+                decoded_text = file_bytes.decode(enc)
+                if decoded_text and decoded_text.strip():
+                    return decoded_text
             except Exception:
-                pass
+                continue
 
-    # 3. Fallback General Text Check (No null bytes in header)
-    if b"\x00" not in file_bytes[:1024]:
-        try:
-            decoded_text = file_bytes.decode("utf-8")
-            return f"Attached File Content ({filename}):\n\n{decoded_text}"
-        except Exception:
-            pass
-
-    # 4. Binary Files (PDF, Images, Audio, Video, etc.)
+    # 3. Binary Files (PDF, Images, Audio, Video, etc.)
     return types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
 
 
@@ -179,19 +184,26 @@ async def summarize_document(file: UploadFile = File(...)):
 
         file_input = process_uploaded_file(file_bytes, filename, content_type)
 
-        prompt = """
-        Analyze the attached file content carefully and extract the most important information.
+        prompt_rules = """
+        Analyze the attached document content carefully and extract the most important information.
         
         Formatting Rules:
         1. Output clean plain text without any markdown code blocks (no ```text).
         2. Do NOT use markdown headers like ### or bold symbols like **.
         3. Use clear, simple headings and simple dashes (-) for bullet points.
-        4. Keep the output language matching the original file.
+        4. Keep the output language matching the original document language.
         """
+
+        if isinstance(file_input, str):
+            contents = [
+                f"DOCUMENT CONTENT ({filename}):\n\n{file_input}\n\n====================\nINSTRUCTIONS:\n{prompt_rules}"
+            ]
+        else:
+            contents = [file_input, prompt_rules]
 
         response = client.models.generate_content(
             model="gemini-3.5-flash",
-            contents=[file_input, prompt],
+            contents=contents,
         )
 
         txt_data = response.text
@@ -211,6 +223,8 @@ async def summarize_document(file: UploadFile = File(...)):
             headers={"Content-Disposition": f"attachment; filename={new_filename}"},
         )
 
+    except HTTPException as http_ex:
+        raise http_ex
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -254,8 +268,8 @@ async def generate_questions_file(
 
         file_input = process_uploaded_file(file_bytes, filename, content_type)
 
-        prompt = f"""
-        Read the attached file and generate exactly {num_questions} comprehension questions based on its content.
+        prompt_rules = f"""
+        Generate exactly {num_questions} comprehension questions based on the document content.
 
         Question Type Distribution:
         - Multiple Choice Questions (MCQ): {count_mcq}
@@ -268,12 +282,19 @@ async def generate_questions_file(
         3. For MCQs, list options as A), B), C), D).
         4. For True/False, list options as [ True / False ].
         5. Add an "ANSWER KEY" section at the end of the file with all correct answers.
-        6. Match the language of the uploaded file.
+        6. Match the language of the uploaded document.
         """
+
+        if isinstance(file_input, str):
+            contents = [
+                f"DOCUMENT CONTENT ({filename}):\n\n{file_input}\n\n====================\nINSTRUCTIONS:\n{prompt_rules}"
+            ]
+        else:
+            contents = [file_input, prompt_rules]
 
         response = client.models.generate_content(
             model="gemini-3.5-flash",
-            contents=[file_input, prompt],
+            contents=contents,
         )
 
         txt_data = response.text
@@ -293,6 +314,8 @@ async def generate_questions_file(
             headers={"Content-Disposition": f"attachment; filename={new_filename}"},
         )
 
+    except HTTPException as http_ex:
+        raise http_ex
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
