@@ -5,7 +5,6 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from google import genai
 from google.genai import types
-from pydantic import BaseModel
 
 app = FastAPI(
     title="AI Developer & Learning Toolkit API",
@@ -32,18 +31,16 @@ def home():
 
 
 # -------------------------------------------------------------------
-# Part 1: Programming-Only AI Assistant
+# Part 1: Programming-Only AI Assistant (Form Field Input)
 # -------------------------------------------------------------------
-class CodeQuery(BaseModel):
-    question: str
-
-
 @app.post("/chat/programming", tags=["Part 1: Programming Chat"])
-async def programming_chat(query: CodeQuery):
+async def programming_chat(
+    question: str = Form(..., description="Type your programming question here")
+):
     """
     Ask Gemini anything related strictly to programming and computer science.
     """
-    if not query.question.strip():
+    if not question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     client = get_gemini_client()
@@ -59,7 +56,7 @@ async def programming_chat(query: CodeQuery):
     - Use simple numbers (1, 2, 3) and simple dashes (-) for lists.
     """
 
-    prompt = f"{system_instruction}\n\nUser Question: {query.question}"
+    prompt = f"{system_instruction}\n\nUser Question: {question}"
 
     try:
         response = client.models.generate_content(
@@ -213,7 +210,7 @@ async def generate_questions_file(
 
 
 # -------------------------------------------------------------------
-# Part 4: Core School Subjects Tutor (Clean Plain Text Response)
+# Part 4: Core School Subjects Tutor (Dropdown Selection)
 # -------------------------------------------------------------------
 class SubjectName(str, Enum):
     MATHEMATICS = "Mathematics"
