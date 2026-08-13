@@ -209,43 +209,46 @@ async def generate_questions_file(
 
 
 # -------------------------------------------------------------------
-# Part 4: Core School Subjects Tutor (Math, Science, Arabic, English)
+# Part 4: Core School Subjects Tutor (Dropdown Selection)
 # -------------------------------------------------------------------
 class SubjectName(str, Enum):
-    MATH = "Mathematics"
+    MATHEMATICS = "Mathematics"
     SCIENCE = "Science"
     ARABIC = "Arabic"
     ENGLISH = "English"
 
 
-class SubjectQuery(BaseModel):
-    subject: SubjectName
-    question: str
-
-
 @app.post("/chat/subjects", tags=["Part 4: Core Subjects Tutor"])
-async def subjects_chat(query: SubjectQuery):
+async def subjects_chat(
+    subject: SubjectName = Form(..., description="Select the subject"),
+    question: str = Form(..., description="Type your question or request here"),
+):
     """
-    Ask questions in Math, Science, Arabic, or English.
-    Includes foundational tips and core concepts to strengthen the student.
+    Ask specialized questions in Mathematics, Science, Arabic, or English.
+    Provides answers strictly tailored to the chosen subject, plus foundational guides for zero-level learners.
     """
-    if not query.question.strip():
+    if not question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     client = get_gemini_client()
 
     system_instruction = f"""
-    You are an expert tutor in {query.subject.value}.
-    
-    Instructions:
-    1. Answer the student's question clearly, step-by-step, and accurately.
-    2. Add a dedicated section titled "Foundational Concepts / الأساسيات":
-       - Provide core rules, basic tips, or prerequisites related to this topic that will strengthen the student's math/science/language foundations.
-    3. Keep the tone encouraging, clear, and easy to understand.
-    4. Match the language used by the student (Arabic or English).
+    You are an expert tutor dedicated EXCLUSIVELY to teaching the subject: {subject.value}.
+
+    STRICT BOUNDARIES:
+    1. Answer ONLY questions related to {subject.value}.
+    2. If the student asks about something outside {subject.value}, politely decline and inform them that you are currently configured as a tutor for {subject.value} only.
+
+    TEACHING INSTRUCTIONS:
+    1. If the student asks a specific problem/question: Answer it clearly with step-by-step logic.
+    2. If the student mentions learning from scratch ("تعلم من الصفر"), needs basics, or asks for foundational guidance:
+       - Provide a structured "Roadmap & Fundamentals" (خارطة الطريق والأساسيات).
+       - Outline the core building blocks required to master {subject.value} step-by-step from zero.
+    3. Keep the tone encouraging, clear, and structured.
+    4. Match the student's input language (Arabic or English).
     """
 
-    prompt = f"{system_instruction}\n\nStudent Question: {query.question}"
+    prompt = f"{system_instruction}\n\nStudent Question: {question}"
 
     try:
         response = client.models.generate_content(
@@ -253,7 +256,7 @@ async def subjects_chat(query: SubjectQuery):
             contents=prompt,
         )
         return {
-            "subject": query.subject.value,
+            "selected_subject": subject.value,
             "answer": response.text,
         }
     except Exception as e:
