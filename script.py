@@ -1,33 +1,147 @@
 import io
 import os
+from enum import Enum
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(
+    title="AI Developer & Learning Toolkit API",
+    description="A multi-purpose AI service using Gemini 3.5 Flash",
+    version="1.0.0",
+)
 
 
-@app.get("/")
+# -------------------------------------------------------------------
+# Helper: Get Gemini Client
+# -------------------------------------------------------------------
+def get_gemini_client() -> genai.Client:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500, detail="GEMINI_API_KEY environment variable is not set."
+        )
+    return genai.Client(api_key=api_key)
+
+
+@app.get("/", tags=["General"])
 def home():
-    return {"message": "API is running. Go to /docs to test it."}
+    return {"message": "API is online. Go to /docs to use the interactive UI."}
 
 
-@app.post("/generate_questions")
+# -------------------------------------------------------------------
+# Part 1: Programming-Only AI Assistant
+# -------------------------------------------------------------------
+class CodeQuery(BaseModel):
+    question: str
+
+
+@app.post("/chat/programming", tags=["Part 1: Programming Chat"])
+async def programming_chat(query: CodeQuery):
+    """
+    Ask Gemini anything related strictly to programming and computer science.
+    """
+    if not query.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    client = get_gemini_client()
+
+    system_instruction = """
+    You are a strict programming assistant.
+    Answer ONLY questions related to programming, software engineering, databases, algorithms, web development, and computer science.
+    If the user asks about ANY topic outside programming (e.g., cooking, history, general life advice, sports, etc.), politely decline to answer and state that you are only allowed to answer programming questions.
+    """
+
+    prompt = f"{system_instruction}\n\nUser Question: {query.question}"
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=prompt,
+        )
+        return {"answer": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------
+# Part 2: Document Summarizer (.txt File Export)
+# -------------------------------------------------------------------
+@app.post("/summarize", tags=["Part 2: Document Summarizer"])
+async def summarize_document(file: UploadFile = File(...)):
+    """
+    Upload any file (PDF, TXT, Image, Document) to extract key points and download as .txt file.
+    """
+    client = get_gemini_client()
+
+    try:
+        file_bytes = await file.read()
+        mime_type = file.content_type or "text/plain"
+
+        uploaded_part = types.Part.from_bytes(
+            data=file_bytes,
+            mime_type=mime_type,
+        )
+
+        prompt = """
+        Analyze the attached file carefully and extract the most important information.
+        
+        Formatting Rules for Output (.txt):
+        1. Output plain text directly. Do NOT use markdown code blocks like ```text.
+        2. Provide a clear Title / Topic Overview at the top.
+        3. Write a brief Summary paragraph of the document.
+        4. List the most important Key Points and Takeaways clearly using bullet points.
+        5. Keep the output language matching the original file.
+        """
+
+        response = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=[uploaded_part, prompt],
+        )
+
+        txt_data = response.text
+        if not txt_data or not txt_data.strip():
+            raise HTTPException(
+                status_code=500, detail="Generated summary was empty."
+            )
+
+        file_stream = io.BytesIO(txt_data.encode("utf-8"))  # type: ignore
+
+        original_name = file.filename or "file"
+        base_name = os.path.splitext(original_name)[0]
+        new_filename = f"summary_{base_name}.txt"
+
+        return StreamingResponse(
+            file_stream,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={new_filename}"},
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------
+# Part 3: Custom Question Generator (.txt File Export)
+# -------------------------------------------------------------------
+@app.post("/generate_questions", tags=["Part 3: Question Generator"])
 async def generate_questions_file(
     num_questions: int = Form(5, description="Total number of questions"),
-    mcq_percent: int = Form(10, description="Multiple choice percentage {0-100}"),
-    tf_percent: int = Form(10, description="True/False percentage {0-100}"),
-    essay_percent: int = Form(30, description="Short answer percentage {0-100}"),
+    mcq_percent: int = Form(0, description="Multiple choice percentage (0-100)"),
+    tf_percent: int = Form(100, description="True/False percentage (0-100)"),
+    essay_percent: int = Form(0, description="Short answer percentage (0-100)"),
     file: UploadFile = File(...),
 ):
-    # Validate number of questions
+    """
+    Generate customized exam questions based on an uploaded file and download as .txt file.
+    """
     if num_questions < 1 or num_questions > 20:
         raise HTTPException(
             status_code=400, detail="Please enter a question count between 1 and 20."
         )
 
-    # Validate percentage total
     total_percentage = mcq_percent + tf_percent + essay_percent
     if total_percentage != 100:
         raise HTTPException(
@@ -35,25 +149,16 @@ async def generate_questions_file(
             detail=f"Percentages must sum to 100%. Current sum: {total_percentage}%",
         )
 
-    # Check API Key
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500, detail="GEMINI_API_KEY environment variable is not set."
-        )
-
-    # Calculate question distribution
     count_mcq = round((mcq_percent / 100) * num_questions)
     count_tf = round((tf_percent / 100) * num_questions)
     count_essay = num_questions - (count_mcq + count_tf)
+
+    client = get_gemini_client()
 
     try:
         file_bytes = await file.read()
         mime_type = file.content_type or "text/plain"
 
-        client = genai.Client(api_key=api_key)
-
-        # Convert uploaded file bytes into Gemini Part format
         uploaded_part = types.Part.from_bytes(
             data=file_bytes,
             mime_type=mime_type,
@@ -82,7 +187,6 @@ async def generate_questions_file(
         )
 
         txt_data = response.text
-
         if not txt_data or not txt_data.strip():
             raise HTTPException(
                 status_code=500, detail="Generated content was empty."
@@ -90,7 +194,6 @@ async def generate_questions_file(
 
         file_stream = io.BytesIO(txt_data.encode("utf-8"))  # type: ignore
 
-        # Set output file name
         original_name = file.filename or "file"
         base_name = os.path.splitext(original_name)[0]
         new_filename = f"questions_{base_name}.txt"
@@ -101,5 +204,57 @@ async def generate_questions_file(
             headers={"Content-Disposition": f"attachment; filename={new_filename}"},
         )
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -------------------------------------------------------------------
+# Part 4: Core School Subjects Tutor (Math, Science, Arabic, English)
+# -------------------------------------------------------------------
+class SubjectName(str, Enum):
+    MATH = "Mathematics"
+    SCIENCE = "Science"
+    ARABIC = "Arabic"
+    ENGLISH = "English"
+
+
+class SubjectQuery(BaseModel):
+    subject: SubjectName
+    question: str
+
+
+@app.post("/chat/subjects", tags=["Part 4: Core Subjects Tutor"])
+async def subjects_chat(query: SubjectQuery):
+    """
+    Ask questions in Math, Science, Arabic, or English.
+    Includes foundational tips and core concepts to strengthen the student.
+    """
+    if not query.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    client = get_gemini_client()
+
+    system_instruction = f"""
+    You are an expert tutor in {query.subject.value}.
+    
+    Instructions:
+    1. Answer the student's question clearly, step-by-step, and accurately.
+    2. Add a dedicated section titled "Foundational Concepts / الأساسيات":
+       - Provide core rules, basic tips, or prerequisites related to this topic that will strengthen the student's math/science/language foundations.
+    3. Keep the tone encouraging, clear, and easy to understand.
+    4. Match the language used by the student (Arabic or English).
+    """
+
+    prompt = f"{system_instruction}\n\nStudent Question: {query.question}"
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=prompt,
+        )
+        return {
+            "subject": query.subject.value,
+            "answer": response.text,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
