@@ -1,5 +1,8 @@
 import io
+import mimetypes
 import os
+import xml.etree.ElementTree as ET
+import zipfile
 from enum import Enum
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -25,13 +28,104 @@ def get_gemini_client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
+# -------------------------------------------------------------------
+# Helper: Extract text from Word (.docx) files
+# -------------------------------------------------------------------
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            texts = [
+                node.text
+                for node in tree.iter()
+                if node.tag.endswith("}t") and node.text
+            ]
+            return "\n".join(texts)
+    except Exception:
+        return ""
+
+
+# -------------------------------------------------------------------
+# Universal File Handler (Handles ALL File Types)
+# -------------------------------------------------------------------
+def process_uploaded_file(file_bytes: bytes, filename: str, content_type: str):
+    ext = os.path.splitext(filename)[1].lower()
+    guessed_mime, _ = mimetypes.guess_type(filename)
+    mime_type = (
+        content_type
+        if (content_type and content_type != "application/octet-stream")
+        else (guessed_mime or "application/octet-stream")
+    )
+
+    # 1. Handle Word (.docx) documents
+    if ext == ".docx":
+        extracted_text = extract_text_from_docx(file_bytes)
+        if extracted_text.strip():
+            return f"Attached Word Document ({filename}):\n\n{extracted_text}"
+
+    # 2. Known Text / Code Extensions
+    text_extensions = {
+        ".txt",
+        ".md",
+        ".csv",
+        ".json",
+        ".py",
+        ".html",
+        ".htm",
+        ".xml",
+        ".js",
+        ".ts",
+        ".css",
+        ".java",
+        ".c",
+        ".cpp",
+        ".cs",
+        ".php",
+        ".rb",
+        ".sql",
+        ".sh",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".log",
+    }
+
+    if (
+        ext in text_extensions
+        or mime_type.startswith("text/")
+        or mime_type
+        in ["application/json", "application/javascript", "application/xml"]
+    ):
+        try:
+            decoded_text = file_bytes.decode("utf-8")
+            return f"Attached File Content ({filename}):\n\n{decoded_text}"
+        except UnicodeDecodeError:
+            try:
+                decoded_text = file_bytes.decode("latin-1")
+                return f"Attached File Content ({filename}):\n\n{decoded_text}"
+            except Exception:
+                pass
+
+    # 3. Fallback General Text Check (No null bytes in header)
+    if b"\x00" not in file_bytes[:1024]:
+        try:
+            decoded_text = file_bytes.decode("utf-8")
+            return f"Attached File Content ({filename}):\n\n{decoded_text}"
+        except Exception:
+            pass
+
+    # 4. Binary Files (PDF, Images, Audio, Video, etc.)
+    return types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+
+
 @app.get("/", tags=["General"])
 def home():
     return {"message": "API is online. Go to /docs to use the interactive UI."}
 
 
 # -------------------------------------------------------------------
-# Part 1: Programming-Only AI Assistant (Form Field Input)
+# Part 1: Programming-Only AI Assistant
 # -------------------------------------------------------------------
 @app.post("/chat/programming", tags=["Part 1: Programming Chat"])
 async def programming_chat(
@@ -74,21 +168,19 @@ async def programming_chat(
 @app.post("/summarize", tags=["Part 2: Document Summarizer"])
 async def summarize_document(file: UploadFile = File(...)):
     """
-    Upload any file (PDF, TXT, Image, Document) to extract key points and download as .txt file.
+    Upload ANY file (PDF, TXT, Word, Image, Document) to extract key points and download as .txt file.
     """
     client = get_gemini_client()
 
     try:
         file_bytes = await file.read()
-        mime_type = file.content_type or "text/plain"
+        filename = file.filename or "file.txt"
+        content_type = file.content_type or "text/plain"
 
-        uploaded_part = types.Part.from_bytes(
-            data=file_bytes,
-            mime_type=mime_type,
-        )
+        file_input = process_uploaded_file(file_bytes, filename, content_type)
 
         prompt = """
-        Analyze the attached file carefully and extract the most important information.
+        Analyze the attached file content carefully and extract the most important information.
         
         Formatting Rules:
         1. Output clean plain text without any markdown code blocks (no ```text).
@@ -99,7 +191,7 @@ async def summarize_document(file: UploadFile = File(...)):
 
         response = client.models.generate_content(
             model="gemini-3.5-flash",
-            contents=[uploaded_part, prompt],
+            contents=[file_input, prompt],
         )
 
         txt_data = response.text
@@ -110,8 +202,7 @@ async def summarize_document(file: UploadFile = File(...)):
 
         file_stream = io.BytesIO(txt_data.encode("utf-8"))  # type: ignore
 
-        original_name = file.filename or "file"
-        base_name = os.path.splitext(original_name)[0]
+        base_name = os.path.splitext(filename)[0]
         new_filename = f"summary_{base_name}.txt"
 
         return StreamingResponse(
@@ -136,7 +227,7 @@ async def generate_questions_file(
     file: UploadFile = File(...),
 ):
     """
-    Generate customized exam questions based on an uploaded file and download as .txt file.
+    Generate customized exam questions based on ANY uploaded file and download as .txt file.
     """
     if num_questions < 1 or num_questions > 20:
         raise HTTPException(
@@ -158,12 +249,10 @@ async def generate_questions_file(
 
     try:
         file_bytes = await file.read()
-        mime_type = file.content_type or "text/plain"
+        filename = file.filename or "file.txt"
+        content_type = file.content_type or "text/plain"
 
-        uploaded_part = types.Part.from_bytes(
-            data=file_bytes,
-            mime_type=mime_type,
-        )
+        file_input = process_uploaded_file(file_bytes, filename, content_type)
 
         prompt = f"""
         Read the attached file and generate exactly {num_questions} comprehension questions based on its content.
@@ -184,7 +273,7 @@ async def generate_questions_file(
 
         response = client.models.generate_content(
             model="gemini-3.5-flash",
-            contents=[uploaded_part, prompt],
+            contents=[file_input, prompt],
         )
 
         txt_data = response.text
@@ -195,8 +284,7 @@ async def generate_questions_file(
 
         file_stream = io.BytesIO(txt_data.encode("utf-8"))  # type: ignore
 
-        original_name = file.filename or "file"
-        base_name = os.path.splitext(original_name)[0]
+        base_name = os.path.splitext(filename)[0]
         new_filename = f"questions_{base_name}.txt"
 
         return StreamingResponse(
