@@ -1,26 +1,22 @@
-import io
-import mimetypes
 import os
-import xml.etree.ElementTree as ET
-import zipfile
-from enum import Enum
 from typing import Dict, List, Set
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Form, HTTPException
 from google import genai
-from google.genai import types
 from pydantic import BaseModel, Field
 
+# -------------------------------------------------------------------
+# FastAPI App Initialization
+# -------------------------------------------------------------------
 app = FastAPI(
-    title="AI Developer & Learning Toolkit API",
-    description="A multi-purpose AI service with Intelligent Learning Path & Gemini 3.5 Flash",
+    title="Personalized Learning Path Service",
+    description="Feature #2: Intelligent Daily Learning Path Scheduler with Gemini Rationale",
     version="1.0.0",
 )
 
 
 # -------------------------------------------------------------------
-# Helper: Get Gemini Client
+# Helper: Gemini Client Setup
 # -------------------------------------------------------------------
 def get_gemini_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
@@ -33,7 +29,7 @@ def get_gemini_client() -> genai.Client:
 
 
 # -------------------------------------------------------------------
-# Part 2: Feature #2 (Personalized Learning Path Generator) Engine
+# Data Schemas & Models
 # -------------------------------------------------------------------
 class Node(BaseModel):
     id: str
@@ -75,6 +71,9 @@ class LearningPathResponse(BaseModel):
     lessons: List[ScheduledLessonResponse]
 
 
+# -------------------------------------------------------------------
+# Engine 1: Graph Traversal & Prerequisite Engine
+# -------------------------------------------------------------------
 class GraphEngine:
 
     def __init__(self, nodes: List[Node], edges: List[Edge]):
@@ -118,6 +117,9 @@ class GraphEngine:
         return max(1, len(visited))
 
 
+# -------------------------------------------------------------------
+# Engine 2: Priority Scoring Engine
+# -------------------------------------------------------------------
 class PriorityScorer:
 
     def __init__(self, graph_engine: GraphEngine):
@@ -140,7 +142,10 @@ class PriorityScorer:
         return round(mastery_gap * urgency_weight * unlock_value, 3)
 
 
-MOCK_CURRICULUM_NODES = [
+# -------------------------------------------------------------------
+# Curriculum Graph Data Setup
+# -------------------------------------------------------------------
+CURRICULUM_NODES = [
     Node(
         id="m_frac",
         subject_id="Mathematics",
@@ -191,17 +196,18 @@ MOCK_CURRICULUM_NODES = [
     ),
 ]
 
-MOCK_CURRICULUM_EDGES = [
+CURRICULUM_EDGES = [
     Edge(from_node_id="m_frac", to_node_id="m_quad"),
     Edge(from_node_id="m_quad", to_node_id="m_calc"),
 ]
 
-CURRICULUM_GRAPH = GraphEngine(
-    nodes=MOCK_CURRICULUM_NODES, edges=MOCK_CURRICULUM_EDGES
-)
+CURRICULUM_GRAPH = GraphEngine(nodes=CURRICULUM_NODES, edges=CURRICULUM_EDGES)
 PRIORITY_SCORER = PriorityScorer(graph_engine=CURRICULUM_GRAPH)
 
 
+# -------------------------------------------------------------------
+# Engine 3: AI Rationale Generator (Gemini LLM)
+# -------------------------------------------------------------------
 def generate_ai_rationale(
     client: genai.Client,
     lesson_title: str,
@@ -223,107 +229,20 @@ def generate_ai_rationale(
         if res.text:
             return res.text.strip().replace("\n", " ")
         return f"تم اختيار درس {lesson_title} لتقوية مهاراتك وسد الثغرات التعليمية."
-    except (RuntimeError, ValueError, Exception):
+    except Exception:
         return f"تم اختيار درس {lesson_title} لتقوية مهاراتك وسد الثغرات التعليمية الأساسية."
 
 
 # -------------------------------------------------------------------
-# Helper: Universal File Handler
+# Endpoints
 # -------------------------------------------------------------------
-def extract_text_from_docx(file_bytes: bytes) -> str:
-    try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-            xml_content = z.read("word/document.xml")
-            tree = ET.fromstring(xml_content)
-            texts: List[str] = [
-                str(node.text)
-                for node in tree.iter()
-                if node.tag.endswith("}t") and node.text is not None
-            ]
-            return "\n".join(texts)
-    except (zipfile.BadZipFile, ET.ParseError, KeyError, Exception):
-        return ""
-
-
-def process_uploaded_file(file_bytes: bytes, filename: str, content_type: str):
-    if not file_bytes or not file_bytes.strip():
-        raise HTTPException(
-            status_code=400,
-            detail=f"The uploaded file '{filename}' is empty. Please provide a file with content.",
-        )
-
-    ext = os.path.splitext(filename)[1].lower()
-    guessed_mime, _ = mimetypes.guess_type(filename)
-    mime_type = (
-        content_type
-        if (content_type and content_type != "application/octet-stream")
-        else (guessed_mime or "application/octet-stream")
-    )
-
-    if ext == ".docx":
-        extracted_text = extract_text_from_docx(file_bytes)
-        if extracted_text.strip():
-            return extracted_text
-
-    arabic_and_text_encodings = [
-        "utf-8",
-        "utf-8-sig",
-        "cp1256",
-        "iso-8859-6",
-        "utf-16",
-        "latin_1",
-    ]
-    text_extensions = {
-        ".txt",
-        ".md",
-        ".csv",
-        ".json",
-        ".py",
-        ".html",
-        ".htm",
-        ".xml",
-        ".js",
-        ".ts",
-        ".css",
-        ".java",
-        ".c",
-        ".cpp",
-        ".cs",
-        ".php",
-        ".rb",
-        ".sql",
-        ".sh",
-        ".yaml",
-        ".yml",
-        ".ini",
-        ".log",
-    }
-
-    if (
-        ext in text_extensions
-        or mime_type.startswith("text/")
-        or mime_type
-        in ["application/json", "application/javascript", "application/xml"]
-    ):
-        for enc in arabic_and_text_encodings:
-            try:
-                decoded_text = file_bytes.decode(enc)
-                if decoded_text and decoded_text.strip():
-                    return decoded_text
-            except (UnicodeDecodeError, LookupError):
-                continue
-
-    return types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-
-
 @app.get("/", tags=["General"])
 def home():
-    return {"message": "API is online. Go to /docs to use the interactive UI."}
+    return {
+        "message": "Personalized Learning Path Service is running. Visit /docs to test the API."
+    }
 
 
-# -------------------------------------------------------------------
-# Endpoint: Feature #2 - Personalized Learning Path Generator
-# -------------------------------------------------------------------
 @app.post(
     "/learning_path/generate",
     tags=["Feature #2: Personalized Learning Path"],
@@ -339,6 +258,11 @@ async def generate_personalized_learning_path(
     include_arabic: bool = Form(True, description="Include Arabic"),
     include_english: bool = Form(True, description="Include English"),
 ):
+    """
+    Builds an optimized daily learning path based on the student's mastery profile and prerequisite graph.
+    Uses AI strictly to generate a one-line motivating rationale for each scheduled topic.
+    """
+    # 1. فلترة المواد المشترك بها الطالب
     subscribed_subjects = []
     if include_math:
         subscribed_subjects.append("Mathematics")
@@ -354,6 +278,7 @@ async def generate_personalized_learning_path(
             status_code=400, detail="Please select at least one subject."
         )
 
+    # 2. سجل تقييم الطالب ومستوى إتقانه (Knowledge Profile)
     student_states: Dict[str, StudentNodeState] = {
         "m_frac": StudentNodeState(
             student_id=student_id,
@@ -399,6 +324,7 @@ async def generate_personalized_learning_path(
         ),
     }
 
+    # 3. حساب نقاط الأولوية وتصفية الدروس المؤهلة
     candidates = []
     for node_id, node in CURRICULUM_GRAPH.nodes_map.items():
         if node.subject_id not in subscribed_subjects:
@@ -424,8 +350,10 @@ async def generate_personalized_learning_path(
             )
             candidates.append((node, score, flag, state.mastery_score))
 
+    # الترتيب التنازلي حسب الأولوية
     candidates.sort(key=lambda x: x[1], reverse=True)
 
+    # 4. خوارزمية التعبئة الذكية (Greedy Packing)
     scheduled_lessons = []
     time_used = 0
     last_was_hard = False
@@ -437,6 +365,7 @@ async def generate_personalized_learning_path(
             if last_was_hard and is_hard:
                 continue
 
+            # استدعاء الذكاء الاصطناعي لكتابة تعليل الدرس فقط
             rationale = generate_ai_rationale(
                 client=client,
                 lesson_title=node.title_ar,
@@ -467,187 +396,3 @@ async def generate_personalized_learning_path(
         daily_budget_minutes=daily_time_minutes,
         lessons=scheduled_lessons,
     )
-
-
-# -------------------------------------------------------------------
-# Part 1: Programming-Only AI Assistant
-# -------------------------------------------------------------------
-@app.post("/chat/programming", tags=["Part 1: Programming Chat"])
-async def programming_chat(
-    question: str = Form(
-        ..., description="Type your programming question here"
-    ),
-):
-    if not question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
-
-    client = get_gemini_client()
-    system_instruction = """
-    You are a strict programming assistant.
-    Answer ONLY questions related to programming, software engineering, databases, algorithms, web development, and computer science.
-    Formatting: Clean plain text without markdown symbols (no ###, **, $).
-    """
-    prompt = f"{system_instruction}\n\nUser Question: {question}"
-
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash", contents=prompt
-        )
-        answer_text = response.text or ""
-        return {"answer": answer_text}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# -------------------------------------------------------------------
-# Part 2: Document Summarizer (.txt File Export)
-# -------------------------------------------------------------------
-@app.post("/summarize", tags=["Part 2: Document Summarizer"])
-async def summarize_document(file: UploadFile = File(...)):
-    client = get_gemini_client()
-    try:
-        file_bytes = await file.read()
-        filename = file.filename or "file.txt"
-        content_type = file.content_type or "text/plain"
-
-        file_input = process_uploaded_file(file_bytes, filename, content_type)
-        prompt_rules = "Extract the most important points in clean plain text. Match the language of the document."
-
-        contents = (
-            [
-                f"DOCUMENT CONTENT ({filename}):\n\n{file_input}\n\nINSTRUCTIONS:\n{prompt_rules}"
-            ]
-            if isinstance(file_input, str)
-            else [file_input, prompt_rules]
-        )
-
-        response = client.models.generate_content(
-            model="gemini-3.5-flash", contents=contents
-        )
-        txt_data = response.text or ""
-        file_stream = io.BytesIO(txt_data.encode("utf-8"))
-
-        base_name = os.path.splitext(filename)[0]
-        new_filename = f"summary_{base_name}.txt"
-
-        return StreamingResponse(
-            file_stream,
-            media_type="text/plain; charset=utf-8",
-            headers={
-                "Content-Disposition": f"attachment; filename={new_filename}"
-            },
-        )
-    except HTTPException as http_ex:
-        raise http_ex
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# -------------------------------------------------------------------
-# Part 3: Custom Question Generator (.txt File Export)
-# -------------------------------------------------------------------
-@app.post("/generate_questions", tags=["Part 3: Question Generator"])
-async def generate_questions_file(
-    num_questions: int = Form(5, description="Total number of questions"),
-    mcq_percent: int = Form(
-        0, description="Multiple choice percentage (0-100)"
-    ),
-    tf_percent: int = Form(100, description="True/False percentage (0-100)"),
-    essay_percent: int = Form(0, description="Short answer percentage (0-100)"),
-    file: UploadFile = File(...),
-):
-    if num_questions < 1 or num_questions > 20:
-        raise HTTPException(
-            status_code=400,
-            detail="Please enter a question count between 1 and 20.",
-        )
-
-    total_percentage = mcq_percent + tf_percent + essay_percent
-    if total_percentage != 100:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Percentages must sum to 100%. Current sum: {total_percentage}%",
-        )
-
-    count_mcq = round((mcq_percent / 100) * num_questions)
-    count_tf = round((tf_percent / 100) * num_questions)
-    count_essay = num_questions - (count_mcq + count_tf)
-
-    client = get_gemini_client()
-    try:
-        file_bytes = await file.read()
-        filename = file.filename or "file.txt"
-        content_type = file.content_type or "text/plain"
-
-        file_input = process_uploaded_file(file_bytes, filename, content_type)
-        prompt_rules = f"""
-        Generate exactly {num_questions} questions:
-        - MCQ: {count_mcq}
-        - True/False: {count_tf}
-        - Short Answer: {count_essay}
-        Format in clean plain text with an Answer Key at the end. Match the document language.
-        """
-
-        contents = (
-            [
-                f"DOCUMENT CONTENT ({filename}):\n\n{file_input}\n\nINSTRUCTIONS:\n{prompt_rules}"
-            ]
-            if isinstance(file_input, str)
-            else [file_input, prompt_rules]
-        )
-
-        response = client.models.generate_content(
-            model="gemini-3.5-flash", contents=contents
-        )
-        txt_data = response.text or ""
-        file_stream = io.BytesIO(txt_data.encode("utf-8"))
-
-        base_name = os.path.splitext(filename)[0]
-        new_filename = f"questions_{base_name}.txt"
-
-        return StreamingResponse(
-            file_stream,
-            media_type="text/plain; charset=utf-8",
-            headers={
-                "Content-Disposition": f"attachment; filename={new_filename}"
-            },
-        )
-    except HTTPException as http_ex:
-        raise http_ex
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# -------------------------------------------------------------------
-# Part 4: Core School Subjects Tutor
-# -------------------------------------------------------------------
-class SubjectName(str, Enum):
-    MATHEMATICS = "Mathematics"
-    SCIENCE = "Science"
-    ARABIC = "Arabic"
-    ENGLISH = "English"
-
-
-@app.post("/chat/subjects", tags=["Part 4: Core Subjects Tutor"])
-async def subjects_chat(
-    subject: SubjectName = Form(..., description="Select the subject"),
-    question: str = Form(..., description="Type your question or request here"),
-):
-    if not question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
-
-    client = get_gemini_client()
-    system_instruction = f"""
-    You are an expert tutor dedicated EXCLUSIVELY to teaching: {subject.value}.
-    Format: Clean plain text without markdown symbols (no ###, **, $).
-    """
-    prompt = f"{system_instruction}\n\nStudent Question: {question}"
-
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash", contents=prompt
-        )
-        answer_text = response.text or ""
-        return {"selected_subject": subject.value, "answer": answer_text}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
